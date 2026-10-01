@@ -53,11 +53,6 @@ class QAPair:
         retrieved_contexts: List of retrieved chunks (ORDER = retriever rank).
                             Used by the retrieval-side metrics (Task 2b).
     """
-    # TODO: define fields
-    # Hints:
-    #   context: str = ""
-    #   metadata: dict = field(default_factory=dict)
-    #   retrieved_contexts: list = field(default_factory=list)
     question: str 
     expected_answer: str
     context: str = ""
@@ -94,12 +89,6 @@ class EvalResult:
                         (Both stay None unless retrieved chunks are supplied;
                          they are NOT part of overall_score().)
     """
-    # TODO: define fields
-    # Hints:
-    #   failure_type: str | None = None
-    #   context_precision: float | None = None
-    #   context_recall: float | None = None
-    # pass
     qa_pair: QAPair
     actual_answer: str
     faithfulness: float
@@ -263,7 +252,6 @@ class RAGASEvaluator:
         Return 1.0 if expected empty; 0.0 if no chunks or none relevant.
         Reordering relevant chunks earlier (reranking) raises this score.
         """
-        # TODO
         if not expected:
             return 1.0
         expected_tokens = _tokenize(expected)
@@ -310,7 +298,6 @@ class RAGASEvaluator:
         Returns:
             EvalResult with all fields populated.
         """
-        # TODO
         faithfulness = self.evaluate_faithfulness(answer, context)
         relevance = self.evaluate_relevance(answer, question)
         completeness = self.evaluate_completeness(answer, expected)
@@ -521,9 +508,6 @@ class BenchmarkRunner:
         Returns:
             List of EvalResult, one per qa_pair.
         """
-        # TODO: for each pair, call agent_fn(pair.question), then run_full_eval.
-        # Pass pair.retrieved_contexts as the optional contexts argument and
-        # preserve the original pair on the returned EvalResult.
         results = []
         for pair in qa_pairs:
             answer = agent_fn(pair.question)
