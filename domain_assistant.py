@@ -35,6 +35,7 @@ STOPWORD_TEXT = (
 )
 STOPWORDS = frozenset(STOPWORD_TEXT.split())
 SOURCE_REPEAT_DECAY = 0.9
+DEFAULT_REQUEST_DELAY_SECONDS = 2.0
 ProgressCallback = Callable[[str], None]
 
 
@@ -243,14 +244,14 @@ class TextGenerator(Protocol):
 
 
 class OpenAIGenerator:
-    def __init__(self, max_output_tokens: int = 300) -> None:
+    def __init__(self, max_output_tokens: int = 2000) -> None:
         api_key = os.getenv("OPENAI_API_KEY", "").strip()
         self.model = os.getenv("OPENAI_MODEL", "").strip()
         if not api_key:
             raise RuntimeError("OPENAI_API_KEY is missing from .env")
         if not self.model:
             raise RuntimeError("OPENAI_MODEL is missing from .env")
-        self.client = OpenAI(api_key=api_key)
+        self.client = OpenAI(api_key=api_key, base_url="https://openrouter.ai/api/v1")
         self.max_output_tokens = max_output_tokens
 
     def generate(self, prompt: str) -> str:
@@ -380,8 +381,12 @@ def generate_actual_answers(
     generator: TextGenerator | None = None,
     top_k: int = 5,
     progress: ProgressCallback | None = None,
+    request_delay_seconds: float = DEFAULT_REQUEST_DELAY_SECONDS,
 ) -> dict[str, Any]:
     """Generate the auditable actual-answer artifact for all dataset questions."""
+
+    if isinstance(request_delay_seconds, bool) or request_delay_seconds < 0:
+        raise ValueError("request_delay_seconds must be non-negative")
 
     def notify(message: str) -> None:
         if progress is not None:
@@ -407,6 +412,9 @@ def generate_actual_answers(
 
     answers: list[dict[str, Any]] = []
     for index, item in enumerate(questions, start=1):
+        if index > 1 and request_delay_seconds:
+            notify(f"Waiting {request_delay_seconds:.1f}s before the next model request")
+            time.sleep(request_delay_seconds)
         percentage = index / total
         completed_before = index - 1
         filled_before = round(20 * completed_before / total)
@@ -489,6 +497,15 @@ def parse_args() -> argparse.Namespace:
         help="Output artifact (default: artifacts/actual_answers.json)",
     )
     parser.add_argument("--top-k", type=int, default=5)
+    parser.add_argument(
+        "--request-delay",
+        type=float,
+        default=DEFAULT_REQUEST_DELAY_SECONDS,
+        help=(
+            "Seconds to wait between model requests "
+            f"(default: {DEFAULT_REQUEST_DELAY_SECONDS:g})"
+        ),
+    )
     return parser.parse_args()
 
 
@@ -499,6 +516,7 @@ def main() -> int:
             args.dataset,
             args.corpus_dir,
             top_k=args.top_k,
+            request_delay_seconds=args.request_delay,
             progress=lambda message: print(message, flush=True),
         )
         output = args.output.expanduser().resolve()
