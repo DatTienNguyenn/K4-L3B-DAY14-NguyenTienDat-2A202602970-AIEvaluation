@@ -61,8 +61,8 @@ class QAPair:
     question: str 
     expected_answer: str
     context: str = ""
-    metadata: dict = field(default=dict)
-    retrieved_context: list = field(default=list)
+    metadata: dict = field(default_factory=dict)
+    retrieved_contexts: list = field(default_factory=list)
     pass
 
 
@@ -531,9 +531,10 @@ class BenchmarkRunner:
                 answer=answer,
                 question=pair.question,
                 context=pair.context,   
-                retrieved_contexts=pair.retrieved_contexts,
-                original_pair=pair,
+                contexts=pair.retrieved_contexts,
+                expected=pair.expected_answer
             )
+            eval_result.qa_pair = pair  # Preserve the original QAPair
             results.append(eval_result)
         return results
 
@@ -568,8 +569,8 @@ class BenchmarkRunner:
         avg_context_precision = sum(r.context_precision for r in results if r.context_precision is not None) / sum(1 for r in results if r.context_precision is not None) if any(r.context_precision is not None for r in results) else None
         failure_types = {}
         for r in results:
-            for failure_type in r.failure_types:
-                failure_types[failure_type] = failure_types.get(failure_type, 0) + 1
+            if r.failure_type:
+                failure_types[r.failure_type] = failure_types.get(r.failure_type, 0) + 1
 
         return {
             "total": total,
@@ -687,7 +688,16 @@ class FailureAnalyzer:
             Example: {"hallucination": 3, "irrelevant": 2, "incomplete": 5}
         """
         # TODO
-        raise NotImplementedError("Implement categorize_failures")
+        failure_counts = {}
+        for failure in failures:
+            if failure.failure_type:
+                failure_counts[failure.failure_type] = failure_counts.get(failure.failure_type, 0) + 1
+
+        return {
+            "hallucination": failure_counts.get("hallucination", 0),
+            "irrelevant": failure_counts.get("irrelevant", 0),
+            "incomplete": failure_counts.get("incomplete", 0),
+        }
 
     def find_root_cause(self, failure: EvalResult) -> str:
         """
@@ -700,7 +710,14 @@ class FailureAnalyzer:
             "Multiple issues detected — review full pipeline"
         """
         # TODO: compare faithfulness, relevance, completeness, return appropriate string
-        raise NotImplementedError("Implement find_root_cause")
+        if failure.overall_score() < 0.5:
+            return "Multiple issues detected — review full pipeline"
+        if failure.faithfulness < 0.3: 
+            return "Context is missing or irrelevant — improve retrieval"
+        elif failure.relevance < 0.3:
+            return "Answer does not address the question — improve prompt clarity"
+        elif failure.completeness < 0.3:
+            return "Answer is missing key information — increase context window or improve generation"
 
     def generate_improvement_log(self, failures: list, suggestions: list[str]) -> str:
         """Generate a Markdown table logging failures and improvement actions.
@@ -719,7 +736,17 @@ class FailureAnalyzer:
 
         TODO: Build markdown table with failure details + matched suggestions
         """
-        raise NotImplementedError
+        # TODO
+        table = "| Failure ID | Type | Root Cause | Suggested Fix | Status |\n"
+        table += "|------------|------|------------|---------------|--------|\n"
+        for i, failure in enumerate(failures):
+            failure_id = f"F{i+1:03d}"
+            failure_type = failure.failure_type or "N/A"
+            root_cause = self.find_root_cause(failure)
+            suggested_fix = suggestions[i] if i < len(suggestions) else "N/A"
+            status = "Open"
+            table += f"| {failure_id} | {failure_type} | {root_cause} | {suggested_fix} | {status} |\n"
+        return table
 
     def generate_improvement_suggestions(
         self, failures: list[EvalResult]
@@ -738,7 +765,15 @@ class FailureAnalyzer:
             List of at least 3 suggestion strings (or fewer if failures is empty).
         """
         # TODO: analyze categorized failures and return suggestions
-        raise NotImplementedError("Implement generate_improvement_suggestions")
+        suggestions = []
+        categorized = self.categorize_failures(failures)
+        if categorized.get("hallucination", 0) > 0:
+            suggestions.append("Implement hallucination checker to filter unsupported claims")
+        if categorized.get("irrelevant", 0) > 0:
+            suggestions.append("Improve prompt clarity to ensure answers are relevant")
+        if categorized.get("incomplete", 0) > 0:
+            suggestions.append("Increase context window or improve generation to provide complete answers")
+        return suggestions
 
 
 # ---------------------------------------------------------------------------
