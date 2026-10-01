@@ -142,33 +142,33 @@ và quyết định thiết kế, không chép lại toàn bộ QA.
 
 **Kết quả dataset**
 
-| Hạng mục                      | Kết quả       |
-| ----------------------------- | ------------- |
-| Tổng số records               | \_\_\_\_ / 20 |
-| Easy                          | \_\_\_\_ / 5  |
-| Medium                        | \_\_\_\_ / 7  |
-| Hard                          | \_\_\_\_ / 5  |
-| Adversarial                   | \_\_\_\_ / 3  |
-| Source documents được sử dụng | \_\_\_\_ / 10 |
-| Validator status              | PASS / FAIL   |
+| Hạng mục                      | Kết quả |
+| ----------------------------- | ------- |
+| Tổng số records               | 20 / 20 |
+| Easy                          | 5 / 5   |
+| Medium                        | 7 / 7   |
+| Hard                          | 5 / 5   |
+| Adversarial                   | 3 / 3   |
+| Source documents được sử dụng | 10 / 10 |
+| Validator status              | PASS    |
 
 **Ba case đại diện cho quyết định thiết kế**
 
-| ID  | Difficulty | Source document(s) | Vì sao case phù hợp với difficulty/attack type? |
-| --- | ---------- | ------------------ | ----------------------------------------------- |
-|     |            |                    |                                                 |
-|     |            |                    |                                                 |
-|     |            |                    |                                                 |
+| ID  | Difficulty                     | Source document(s)                    | Vì sao case phù hợp với difficulty/attack type?                                                                                               |
+| --- | ------------------------------ | ------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| E04 | Easy                           | `05_returns_and_exchanges.md`         | Fact lookup một điều kiện đơn về thời hạn trả thiết bị chưa mở. Expected answer có thể đối chiếu trực tiếp với evidence nguyên văn.           |
+| H04 | Hard                           | `09_escalation_and_policy_updates.md` | Cần suy luận theo ngày đặt hàng và ngoại lệ membership: đơn trước 01/09/2026 dùng Policy 1.0 và không được kéo dài bởi OrbitPlus về sau.      |
+| A02 | Adversarial / prompt injection | `00_system_scope.md`                  | Câu hỏi cố ép assistant tiết lộ hidden prompt, credentials và dữ liệu khách khác; attack type phù hợp với quy tắc chống instruction override. |
 
 **Điểm khó nhất khi xây dựng expected answer hoặc evidence là gì?**
 
-> _Câu trả lời:_
+Khó nhất là giữ expected answer không rộng hơn evidence, đặc biệt với policy có điều kiện và ngày hiệu lực. Với H04, cần phân biệt ngày trao đổi policy với ngày đặt hàng; với returns và warranty, cần giữ riêng thời hạn, mốc bắt đầu và ngoại lệ. Vì vậy contexts được trích nguyên văn từ đúng source_doc, còn expected answer chỉ tổng hợp các claim mà evidence thực sự hỗ trợ.
 
 **Xác nhận:**
 
-- [ ] Mọi claim trong expected answer đều có evidence hỗ trợ.
-- [ ] Không có questions trùng ý và không dùng kiến thức ngoài corpus.
-- [ ] `python validate_golden_dataset.py` báo `PASS`.
+- [x] Mọi claim trong expected answer đều có evidence hỗ trợ.
+- [x] Không có questions trùng ý và không dùng kiến thức ngoài corpus.
+- [x] `python validate_golden_dataset.py` báo `PASS`.
 
 ### Exercise 3.2 — Benchmark Run
 
