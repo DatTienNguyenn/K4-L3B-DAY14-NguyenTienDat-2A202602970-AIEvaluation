@@ -335,6 +335,7 @@ class RAGASEvaluator:
 
         return EvalResult(
             qa_pair=None,  # This should be set to the actual QAPair if available
+            actual_answer=answer,
             faithfulness=faithfulness,
             relevance=relevance,
             completeness=completeness,
@@ -387,6 +388,7 @@ class LLMJudge:
 
     def __init__(self, judge_llm_fn: Callable[[str], str]) -> None:
         # TODO: store judge_llm_fn
+        self.judge_llm_fn = judge_llm_fn
         pass
 
     def score_response(
@@ -420,7 +422,20 @@ class LLMJudge:
             }
         """
         # TODO
-        raise NotImplementedError("Implement score_response")
+        agent_prompt = f"Question: {question}\nAnswer: {answer}\nRubric: {rubric}\nPlease provide scores for each criterion in JSON format."
+        llm_response = self.judge_llm_fn(agent_prompt)
+        try:
+            import json
+            parsed_response = json.loads(llm_response)
+            scores = parsed_response.get("scores", {})
+            reasoning = parsed_response.get("reasoning", "")
+            for criterion in rubric.keys():
+                if criterion not in scores:
+                    scores[criterion] = 0.5  
+            return {"scores": scores, "reasoning": reasoning}
+        except (json.JSONDecodeError, TypeError):
+            default_scores = {criterion: 0.5 for criterion in rubric.keys()}
+            return {"scores": default_scores, "reasoning": llm_response}
 
     def detect_bias(self, scores_batch: list[dict[str, Any]]) -> dict[str, Any]:
         """
@@ -442,7 +457,36 @@ class LLMJudge:
             }
         """
         # TODO
-        raise NotImplementedError("Implement detect_bias")
+        leniency_bias = False
+        severity_bias = False
+
+        if scores_batch:
+            first_scores = scores_batch[0].get("scores", {})
+            first_avg = sum(first_scores.values()) / len(first_scores) if first_scores else 0.0
+            positional_bias = all(
+                sum(scores.get("scores", {}).values()) / len(scores.get("scores", {})) < first_avg
+                for scores in scores_batch[1:]
+            )
+
+            avg_scores = [
+                sum(scores.get("scores", {}).values()) / len(scores.get("scores", {}))
+                for scores in scores_batch
+            ]
+
+            overall_avg = sum(avg_scores) / len(avg_scores) if avg_scores else 0.0
+            leniency_bias = overall_avg > 0.8   
+            severity_bias = overall_avg < 0.3
+
+        else:
+            positional_bias = False
+            leniency_bias = False
+            severity_bias = False
+
+        return {
+            "positional_bias": positional_bias,
+            "leniency_bias": leniency_bias,
+            "severity_bias": severity_bias,
+        }
 
 
 # ---------------------------------------------------------------------------
@@ -480,7 +524,18 @@ class BenchmarkRunner:
         # TODO: for each pair, call agent_fn(pair.question), then run_full_eval.
         # Pass pair.retrieved_contexts as the optional contexts argument and
         # preserve the original pair on the returned EvalResult.
-        raise NotImplementedError("Implement BenchmarkRunner.run")
+        results = []
+        for pair in qa_pairs:
+            answer = agent_fn(pair.question)
+            eval_result = evaluator.run_full_eval(
+                answer=answer,
+                question=pair.question,
+                context=pair.context,   
+                retrieved_contexts=pair.retrieved_contexts,
+                original_pair=pair,
+            )
+            results.append(eval_result)
+        return results
 
     def generate_report(self, results: list[EvalResult]) -> dict[str, Any]:
         """
@@ -503,7 +558,30 @@ class BenchmarkRunner:
         average when no result contains that metric.
         """
         # TODO
-        raise NotImplementedError("Implement generate_report")
+        total = len(results)
+        passed = sum(1 for r in results if r.passed)
+        pass_rate = passed / total if total > 0 else 0.0
+        avg_faithfulness = sum(r.faithfulness for r in results) / total if total > 0 else 0.0
+        avg_relevance = sum(r.relevance for r in results) / total if total > 0 else 0.0
+        avg_completeness = sum(r.completeness for r in results) / total if total > 0 else 0.0
+        avg_context_recall = sum(r.context_recall for r in results if r.context_recall is not None) / sum(1 for r in results if r.context_recall is not None) if any(r.context_recall is not None for r in results) else None
+        avg_context_precision = sum(r.context_precision for r in results if r.context_precision is not None) / sum(1 for r in results if r.context_precision is not None) if any(r.context_precision is not None for r in results) else None
+        failure_types = {}
+        for r in results:
+            for failure_type in r.failure_types:
+                failure_types[failure_type] = failure_types.get(failure_type, 0) + 1
+
+        return {
+            "total": total,
+            "passed": passed,
+            "pass_rate": pass_rate,
+            "avg_faithfulness": avg_faithfulness,
+            "avg_relevance": avg_relevance,
+            "avg_completeness": avg_completeness,
+            "avg_context_recall": avg_context_recall,
+            "avg_context_precision": avg_context_precision,
+            "failure_types": failure_types,
+        }
 
     def run_regression(self, new_results: list, baseline_results: list) -> dict:
         """Compare new evaluation results against a baseline.
@@ -527,7 +605,35 @@ class BenchmarkRunner:
 
         TODO: Compute avg per metric, compare, list regressions, set passed flag
         """
-        raise NotImplementedError
+        # TODO
+        new_avg_faithfulness = sum(r.faithfulness for r in new_results) / len(new_results) if new_results else 0.0
+        new_avg_relevance = sum(r.relevance for r in new_results) / len(new_results) if new_results else 0.0
+        new_avg_completeness = sum(r.completeness for r in new_results) / len(new_results) if new_results else 0.0
+
+        baseline_avg_faithfulness = sum(r.faithfulness for r in baseline_results) / len(baseline_results) if baseline_results else 0.0
+        baseline_avg_relevance = sum(r.relevance for r in baseline_results) / len(baseline_results) if baseline_results else 0.0
+        baseline_avg_completeness = sum(r.completeness for r in baseline_results) / len(baseline_results) if baseline_results else 0.0
+
+        regressions = []
+        if (baseline_avg_faithfulness - new_avg_faithfulness) > 0.05:
+            regressions.append("faithfulness")
+        if (baseline_avg_relevance - new_avg_relevance) > 0.05:
+            regressions.append("relevance")
+        if (baseline_avg_completeness - new_avg_completeness) > 0.05:
+            regressions.append("completeness")
+
+        passed = len(regressions) == 0
+
+        return {
+            'new_avg_faithfulness': new_avg_faithfulness,
+            'new_avg_relevance': new_avg_relevance,
+            'new_avg_completeness': new_avg_completeness,
+            'baseline_avg_faithfulness': baseline_avg_faithfulness,
+            'baseline_avg_relevance': baseline_avg_relevance,
+            'baseline_avg_completeness': baseline_avg_completeness,
+            'regressions': regressions,
+            'passed': passed
+        }
 
     def identify_failures(
         self,
@@ -545,7 +651,8 @@ class BenchmarkRunner:
             List of failing EvalResults.
         """
         # TODO
-        raise NotImplementedError("Implement identify_failures")
+        failing_results = [r for r in results if any(score < threshold for score in [r.faithfulness, r.relevance, r.completeness])]
+        return failing_results
 
 
 # ---------------------------------------------------------------------------
