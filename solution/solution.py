@@ -17,7 +17,7 @@ Instructions:
     1. Fill in every required section marked with TODO.
     2. Do NOT change class/function signatures. The optional ``contexts``
        parameter in ``run_full_eval`` is part of the required interface.
-    3. Before submit, ensure this file matches your finished work (from repo root: cp template.py solution/solution.py). Prefer editing template.py then re-copy; if you edit this file directly, keep template.py in sync.
+    3. Copy this file to solution/solution.py when done.
     4. Run: pytest tests/ -v
 
 The reranking helper is an optional bonus exercise and may remain unimplemented.
@@ -58,6 +58,11 @@ class QAPair:
     #   context: str = ""
     #   metadata: dict = field(default_factory=dict)
     #   retrieved_contexts: list = field(default_factory=list)
+    question: str 
+    expected_answer: str
+    context: str = ""
+    metadata: dict = field(default=dict)
+    retrieved_context: list = field(default=list)
     pass
 
 
@@ -94,7 +99,18 @@ class EvalResult:
     #   failure_type: str | None = None
     #   context_precision: float | None = None
     #   context_recall: float | None = None
-    pass
+    # pass
+    qa_pair: QAPair
+    actual_answer: str
+    faithfulness: float
+    relevance: float
+    completeness: float
+    passed: bool
+    failure_type: str | None = None
+    context_precision: float | None = None
+    context_recall: float | None = None
+
+
 
     def overall_score(self) -> float:
         """Compute the average of faithfulness, relevance, and completeness.
@@ -104,7 +120,8 @@ class EvalResult:
 
         TODO: Return mean of the three metric scores
         """
-        raise NotImplementedError
+        return (self.faithfulness + self.relevance + self.completeness) / 3.0
+        # raise NotImplementedError
 
 
 # ---------------------------------------------------------------------------
@@ -162,7 +179,11 @@ class RAGASEvaluator:
             float in [0.0, 1.0] — 1.0 = fully grounded in context.
         """
         # TODO
-        raise NotImplementedError("Implement evaluate_faithfulness")
+        answer_tokens = _tokenize(answer)
+        context_tokens = _tokenize(context)
+        faithfulness = len(answer_tokens & context_tokens) / len(answer_tokens) if answer_tokens else 1.0
+        return faithfulness
+        # raise NotImplementedError("Implement evaluate_faithfulness")
 
     def evaluate_relevance(self, answer: str, question: str) -> float:
         """
@@ -176,8 +197,11 @@ class RAGASEvaluator:
             float in [0.0, 1.0]
         """
         # TODO
-        raise NotImplementedError("Implement evaluate_relevance")
-
+        answer_tokens = _tokenize(answer)
+        question_tokens = _tokenize(question)
+        relevance = len(answer_tokens & question_tokens) / len(question_tokens) if question_tokens else 1.0
+        # raise NotImplementedError("Implement evaluate_relevance")
+        return relevance
     def evaluate_completeness(self, answer: str, expected: str) -> float:
         """
         Measure how well the answer covers the expected answer.
@@ -189,8 +213,10 @@ class RAGASEvaluator:
         Returns:
             float in [0.0, 1.0]
         """
-        # TODO
-        raise NotImplementedError("Implement evaluate_completeness")
+        answer_tokens = _tokenize(answer)
+        expected_tokens = _tokenize(expected)
+        completeness = len(answer_tokens & expected_tokens) / len(expected_tokens) if expected_tokens else 1.0
+        return completeness
 
     # -----------------------------------------------------------------------
     # Task 2b — Retrieval-side metrics (evaluate the GET-CONTEXT step)
@@ -212,7 +238,12 @@ class RAGASEvaluator:
         Low recall => retriever missed evidence the answer needs.
         """
         # TODO
-        raise NotImplementedError("Implement evaluate_context_recall")
+        union_tokens = set()
+        for chunk in contexts:
+            union_tokens |= _tokenize(chunk)
+        expected_tokens = _tokenize(expected)
+        recall = len(expected_tokens & union_tokens) / len(expected_tokens) if expected_tokens else 1.0
+        return recall
 
     def evaluate_context_precision(
         self,
@@ -233,7 +264,21 @@ class RAGASEvaluator:
         Reordering relevant chunks earlier (reranking) raises this score.
         """
         # TODO
-        raise NotImplementedError("Implement evaluate_context_precision")
+        if not expected:
+            return 1.0
+        expected_tokens = _tokenize(expected)
+        relevant_indices = []
+        for i, chunk in enumerate(contexts):
+            chunk_tokens = _tokenize(chunk)
+            overlap = len(chunk_tokens & expected_tokens) / len(expected_tokens) if expected_tokens else 0.0
+            if overlap >= relevance_threshold:
+                relevant_indices.append(i)
+        if not relevant_indices:
+            return 0.0
+        precisions = []
+        for k, idx in enumerate(relevant_indices, start=1):
+            precisions.append(len([i for i in relevant_indices if i < k]) / k)
+        return sum(precisions) / len(relevant_indices)
 
     def run_full_eval(
         self,
@@ -266,7 +311,38 @@ class RAGASEvaluator:
             EvalResult with all fields populated.
         """
         # TODO
-        raise NotImplementedError("Implement run_full_eval")
+        faithfulness = self.evaluate_faithfulness(answer, context)
+        relevance = self.evaluate_relevance(answer, question)
+        completeness = self.evaluate_completeness(answer, expected)
+
+        passed = all(score >= 0.5 for score in [faithfulness, relevance, completeness])
+        failure_type = None
+        if faithfulness < 0.3:
+            failure_type = "hallucination"
+        elif relevance < 0.3:
+            failure_type = "irrelevant"
+        elif completeness < 0.3:
+            failure_type = "incomplete"
+        elif not passed:
+            failure_type = "off_topic"
+
+        if contexts is not None:
+            context_recall = self.evaluate_context_recall(contexts, expected)
+            context_precision = self.evaluate_context_precision(contexts, expected)
+        else:
+            context_recall = None
+            context_precision = None
+
+        return EvalResult(
+            qa_pair=None,  # This should be set to the actual QAPair if available
+            faithfulness=faithfulness,
+            relevance=relevance,
+            completeness=completeness,
+            passed=passed,
+            failure_type=failure_type,
+            context_recall=context_recall,
+            context_precision=context_precision,
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -284,6 +360,7 @@ def rerank_by_overlap(contexts: list[str], query: str) -> list[str]:
                  reverse=True)
     """
     # TODO (Bonus — Exercise 3.5): implement the reranker
+    
     raise NotImplementedError("Implement rerank_by_overlap")
 
 

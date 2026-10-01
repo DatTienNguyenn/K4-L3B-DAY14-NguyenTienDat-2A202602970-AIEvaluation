@@ -28,13 +28,13 @@ Theo bài giảng:
 Với từng metric, xác định khi nào score thấp có thể chấp nhận và khi nào là
 critical.
 
-| Metric | Acceptable Low Score Scenario | Critical Low Score Scenario | Action Required |
-|---|---|---|---|
-| Faithfulness | | | |
-| Answer Relevance | | | |
-| Context Recall | | | |
-| Context Precision | | | |
-| Completeness | | | |
+| Metric            | Acceptable Low Score Scenario                                                                          | Critical Low Score Scenario                                                                                        | Action Required                                                                       |
+| ----------------- | ------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------- |
+| Faithfulness      | Model từ chối trả lời hợp lệ do context không đủ thông tin                                             | Model bịa đặt chính sách, thông số kỹ thuật sai sự thật                                                            | Cần thắt chặt system prompt chỉ trả lời thì đủ context và giảm temperature            |
+| Answer Relevance  | Người dùng hỏi những câu hỏi xã giao, vô tri và bot trả lời xã giao lại hoặc hỏi thêm thông tin làm rõ | Bot trả lời lạc đề, khách hỏi trạng thái đơn hàng thì lại trả lời chính sách đổi hàng                              | Tối ưu hóa prompt, hướng dẫn bám sát trọng tâm câu hỏi, context của người dùng        |
+| Context Recall    | Câu hỏi dạng so sánh hoặc tổng quát mà context chỉ cần một phần dữ liệu để trả lời                     | Context hiếu các điều kiện để áp dụng chính sách bảo hành làm bot trả lời thiếu ý hoặc sai chính sách nghiêm trọng | Tăng top_k, tinh chỉnh embedding, cải thiện chunk strategy                            |
+| Context Precision | Cần lấy nhiều ngữ cảnh rộng để bot tổng hợp được các quy định chung                                    | Chunk chứa thông tin mâu thuẫn hoặc rác khiến bot lấy sai dữ liệu ngay từ đầu                                      | Thêm cress-encoder reranker, lọc chunk theo similarity threshold                      |
+| Completeness      | Khách hàng hỏi câu ngắn hay yes/no, bot cần trả lời ngắn gọn thay vì dài dòng                          | Khách hàng hỏi thủ tục đổi trả cần 4 bước mà bot trả lời có 1 bước gây hiểu lầm                                    | Cải thiện context recall, bổ xung rubric yêu cầu checklist các bước trước khi trả lời |
 
 ### Exercise 1.2 — Bias trong LLM-as-a-Judge
 
@@ -45,30 +45,28 @@ Ba bias thường gặp:
 - Self-preference: judge ưu tiên output giống chính model đó.
 
 **Câu 1: Thiết kế experiment phát hiện position bias với ít nhất hai conditions.**
-
-> *Câu trả lời:*
-
+Condition 1 (original order): đưa prompt theo thứ tự và yêu cầu judge chấm điểm cả 2 và chọn ra câu tốt hơn. Condition 2(swap order) đảo ngược vị trí answer với cùng prompt hay system instruction. Nếu judge luôn chấm điểm câu trước cao hơn câu sau thì dễ là model bị position bias. Giải pháp là chấm điểm cả 2 answer rồi lấy trung bình.
 **Câu 2: Làm thế nào giảm verbosity bias bằng rubric design?**
 
-> *Câu trả lời:*
+Đặt tiêu chí phạt rõ ràng nếu câu trả lời thêm thông tin thừa hay lặp lại không liên quan. Định nghĩa complete dựa trên số lượng key points thực sự đáp ứng thay vì độ dài hay hoa mỹ.
 
 **Câu 3: Tại sao cần calibrate LLM judge với human labels?**
 
-> *Câu trả lời:*
+Căn chỉnh độ lệch: LLM judge có thể có tiêu chuẩn khắt khe hoặc lỏng lẻo hơn thực tế hoặc hay bị self-biased. Cần tính toán chỉ số tương đồng với con người để đánh giá độ tin cậy câu trả lời.
 
 ### Exercise 1.3 — Evaluation trong CI/CD
 
 **Câu 1: Chọn threshold để block deployment.**
 
-| Metric | Threshold | Lý do |
-|---|---:|---|
-| Faithfulness | | |
-| Answer Relevance | | |
-| Completeness | | |
+| Metric           | Threshold | Lý do                                                                                                      |
+| ---------------- | --------: | ---------------------------------------------------------------------------------------------------------- |
+| Faithfulness     |    >= 0.8 | Trong hệ thống CSKH thì trả lời liên quan chính sách thì nếu bị hallucination sẽ gây rủi ro pháp lý lớn    |
+| Answer Relevance |    >= 0.7 | Đảm bảo bot trả lời đúng trọng tâm và không vòng vo                                                        |
+| Completeness     |    >= 0.7 | Một số câu hỏi có nhiều cách trả lời hoặc có nhiều bước thì tiêu chí đảm bảo user không phải hỏi nhiều lần |
 
 **Câu 2: Khi nào dùng offline evaluation, online evaluation và human review?**
 
-> *Câu trả lời:*
+Trước khi deploy code/prompt thì cần chạy offline evaluation trên golden dataset để phát hiện sớm regression, đo lường metric ragas, cosine tự động với chi phí thấp. Online evaluation chạy trên production với lưu lượng người dùng thực tế qua tracing hay logging. Cần thiết để theo dõi latency, user feedback, fallback rate. Human review để audit chất lượng thực tế, các edge case phức tạp và cập nhật lại golden dataset hay calibrate.
 
 ---
 
@@ -144,27 +142,27 @@ và quyết định thiết kế, không chép lại toàn bộ QA.
 
 **Kết quả dataset**
 
-| Hạng mục | Kết quả |
-|---|---|
-| Tổng số records | ____ / 20 |
-| Easy | ____ / 5 |
-| Medium | ____ / 7 |
-| Hard | ____ / 5 |
-| Adversarial | ____ / 3 |
-| Source documents được sử dụng | ____ / 10 |
-| Validator status | PASS / FAIL |
+| Hạng mục                      | Kết quả       |
+| ----------------------------- | ------------- |
+| Tổng số records               | \_\_\_\_ / 20 |
+| Easy                          | \_\_\_\_ / 5  |
+| Medium                        | \_\_\_\_ / 7  |
+| Hard                          | \_\_\_\_ / 5  |
+| Adversarial                   | \_\_\_\_ / 3  |
+| Source documents được sử dụng | \_\_\_\_ / 10 |
+| Validator status              | PASS / FAIL   |
 
 **Ba case đại diện cho quyết định thiết kế**
 
-| ID | Difficulty | Source document(s) | Vì sao case phù hợp với difficulty/attack type? |
-|---|---|---|---|
-| | | | |
-| | | | |
-| | | | |
+| ID  | Difficulty | Source document(s) | Vì sao case phù hợp với difficulty/attack type? |
+| --- | ---------- | ------------------ | ----------------------------------------------- |
+|     |            |                    |                                                 |
+|     |            |                    |                                                 |
+|     |            |                    |                                                 |
 
 **Điểm khó nhất khi xây dựng expected answer hoặc evidence là gì?**
 
-> *Câu trả lời:*
+> _Câu trả lời:_
 
 **Xác nhận:**
 
@@ -183,49 +181,49 @@ python evaluate_answers.py
 
 Copy bảng terminal vào đây hoặc điền từ `artifacts/benchmark_results.json`.
 
-| ID | Question (short) | Ctx Recall | Ctx Precision | Faithfulness | Relevance | Completeness | Overall | Passed? | Failure Type |
-|---|---|---:|---:|---:|---:|---:|---:|---|---|
-| E01 | | | | | | | | | |
-| E02 | | | | | | | | | |
-| E03 | | | | | | | | | |
-| E04 | | | | | | | | | |
-| E05 | | | | | | | | | |
-| M01 | | | | | | | | | |
-| M02 | | | | | | | | | |
-| M03 | | | | | | | | | |
-| M04 | | | | | | | | | |
-| M05 | | | | | | | | | |
-| M06 | | | | | | | | | |
-| M07 | | | | | | | | | |
-| H01 | | | | | | | | | |
-| H02 | | | | | | | | | |
-| H03 | | | | | | | | | |
-| H04 | | | | | | | | | |
-| H05 | | | | | | | | | |
-| A01 | | | | | | | | | |
-| A02 | | | | | | | | | |
-| A03 | | | | | | | | | |
+| ID  | Question (short) | Ctx Recall | Ctx Precision | Faithfulness | Relevance | Completeness | Overall | Passed? | Failure Type |
+| --- | ---------------- | ---------: | ------------: | -----------: | --------: | -----------: | ------: | ------- | ------------ |
+| E01 |                  |            |               |              |           |              |         |         |              |
+| E02 |                  |            |               |              |           |              |         |         |              |
+| E03 |                  |            |               |              |           |              |         |         |              |
+| E04 |                  |            |               |              |           |              |         |         |              |
+| E05 |                  |            |               |              |           |              |         |         |              |
+| M01 |                  |            |               |              |           |              |         |         |              |
+| M02 |                  |            |               |              |           |              |         |         |              |
+| M03 |                  |            |               |              |           |              |         |         |              |
+| M04 |                  |            |               |              |           |              |         |         |              |
+| M05 |                  |            |               |              |           |              |         |         |              |
+| M06 |                  |            |               |              |           |              |         |         |              |
+| M07 |                  |            |               |              |           |              |         |         |              |
+| H01 |                  |            |               |              |           |              |         |         |              |
+| H02 |                  |            |               |              |           |              |         |         |              |
+| H03 |                  |            |               |              |           |              |         |         |              |
+| H04 |                  |            |               |              |           |              |         |         |              |
+| H05 |                  |            |               |              |           |              |         |         |              |
+| A01 |                  |            |               |              |           |              |         |         |              |
+| A02 |                  |            |               |              |           |              |         |         |              |
+| A03 |                  |            |               |              |           |              |         |         |              |
 
 **Aggregate Report**
 
-- Overall pass rate: ____%
-- Avg Context Recall: ____
-- Avg Context Precision: ____
-- Avg Faithfulness: ____
-- Avg Relevance: ____
-- Avg Completeness: ____
-- Failure type distribution: ____
+- Overall pass rate: \_\_\_\_%
+- Avg Context Recall: \_\_\_\_
+- Avg Context Precision: \_\_\_\_
+- Avg Faithfulness: \_\_\_\_
+- Avg Relevance: \_\_\_\_
+- Avg Completeness: \_\_\_\_
+- Failure type distribution: \_\_\_\_
 
 **Ba cases có Overall Score thấp nhất**
 
-1. ID: ____ | Score: ____ | Failure type: ____
-2. ID: ____ | Score: ____ | Failure type: ____
-3. ID: ____ | Score: ____ | Failure type: ____
+1. ID: \_**\_ | Score: \_\_** | Failure type: \_\_\_\_
+2. ID: \_**\_ | Score: \_\_** | Failure type: \_\_\_\_
+3. ID: \_**\_ | Score: \_\_** | Failure type: \_\_\_\_
 
 **Nhận xét ngắn:** Metric nào yếu nhất? Kết quả gợi ý vấn đề nằm ở retrieval
 hay generation?
 
-> *Câu trả lời:*
+> _Câu trả lời:_
 
 ### Exercise 3.3 — LLM-as-a-Judge Rubric Design
 
@@ -241,47 +239,47 @@ Chọn 3–5 dimensions:
 - [ ] Actionability
 - [ ] Safety/privacy
 - [ ] Tone/clarity
-- [ ] Dimension khác: __________
+- [ ] Dimension khác: \***\*\_\_\*\***
 
 | Score | Tiêu chí domain-specific | Ví dụ response |
-|---:|---|---|
-| 5 | | |
-| 4 | | |
-| 3 | | |
-| 2 | | |
-| 1 | | |
+| ----: | ------------------------ | -------------- |
+|     5 |                          |                |
+|     4 |                          |                |
+|     3 |                          |                |
+|     2 |                          |                |
+|     1 |                          |                |
 
 **Ba edge cases khó chấm**
 
 | Edge Case | Tại sao khó chấm? | Rubric xử lý thế nào? |
-|---|---|---|
-| | | |
-| | | |
-| | | |
+| --------- | ----------------- | --------------------- |
+|           |                   |                       |
+|           |                   |                       |
+|           |                   |                       |
 
 **Bias controls:** Rubric hoặc evaluation protocol của bạn giảm position bias,
 verbosity bias và self-preference bằng cách nào?
 
-> *Câu trả lời:*
+> _Câu trả lời:_
 
 ### Exercise 3.4 — Framework Comparison (Bonus +5)
 
 Chỉ làm sau khi hoàn thành 3.1–3.3. Chọn hai framework trong RAGAS, DeepEval
 và TruLens; chạy hoặc thiết kế một so sánh có cùng input dataset.
 
-| Tiêu chí | Framework 1: ____ | Framework 2: ____ |
-|---|---|---|
-| Setup complexity | | |
-| Metrics available | | |
-| CI/CD integration | | |
-| Kết quả trên cùng dataset | | |
-| Insight rút ra | | |
+| Tiêu chí                  | Framework 1: \_\_\_\_ | Framework 2: \_\_\_\_ |
+| ------------------------- | --------------------- | --------------------- |
+| Setup complexity          |                       |                       |
+| Metrics available         |                       |                       |
+| CI/CD integration         |                       |                       |
+| Kết quả trên cùng dataset |                       |                       |
+| Insight rút ra            |                       |                       |
 
 - Scores có nhất quán không?
 - Framework nào strict hơn và vì sao?
 - Hai framework có tìm ra cùng failure cases không?
 
-> *Phân tích:*
+> _Phân tích:_
 
 ### Exercise 3.5 — Retrieval Reranking (Bonus +5)
 
@@ -294,22 +292,22 @@ thay đổi Context Recall hay không.
 4. Rerank cùng tập chunks, không thêm hoặc xóa chunk.
 5. Tính lại hai metrics và giải thích kết quả.
 
-| ID | Recall before | Recall after | Precision before | Precision after | Delta Precision |
-|---|---:|---:|---:|---:|---:|
-| | | | | | |
-| | | | | | |
-| | | | | | |
-| | | | | | |
-| | | | | | |
-| **Avg** | | | | | |
+| ID      | Recall before | Recall after | Precision before | Precision after | Delta Precision |
+| ------- | ------------: | -----------: | ---------------: | --------------: | --------------: |
+|         |               |              |                  |                 |                 |
+|         |               |              |                  |                 |                 |
+|         |               |              |                  |                 |                 |
+|         |               |              |                  |                 |                 |
+|         |               |              |                  |                 |                 |
+| **Avg** |               |              |                  |                 |                 |
 
 **Tại sao Recall dự kiến không đổi?**
 
-> *Câu trả lời:*
+> _Câu trả lời:_
 
 **Khi nào reranking không đủ và cần sửa retriever/query/chunking?**
 
-> *Câu trả lời:*
+> _Câu trả lời:_
 
 ---
 
